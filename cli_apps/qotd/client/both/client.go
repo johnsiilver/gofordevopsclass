@@ -8,6 +8,8 @@ import (
 	"net/netip"
 	"os"
 	"strings"
+
+	"github.com/fatih/color"
 )
 
 var (
@@ -100,9 +102,10 @@ func handleAuthor(conn net.Conn, author string) {
 	}
 
 	// Read from the connection and write to stdout.
-	_, err := io.Copy(os.Stdout, conn)
-	if err != nil {
+	b := make([]byte, 1024)
+	n, err := io.ReadFull(conn, b)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 		log.Fatal(err)
 	}
-	os.Stdout.WriteString("\n")
+	color.Blue(string(b[:n]))
 }
