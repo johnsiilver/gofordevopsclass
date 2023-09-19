@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	ping = "ping"
+	ping = 0
 )
 
 // program is a program name and path. path is setup by exec.Lookup().
@@ -24,7 +24,7 @@ type program struct {
 	path string
 }
 
-var requiredList = []program{{name: ping}}
+var requiredList = []program{{name: "ping"}}
 
 func programValidation() error {
 	var err error
@@ -45,7 +45,7 @@ func hostAlive(ctx context.Context, host netip.Addr) bool {
 	// -t 2: timeout after 2 seconds
 	// Note: to work on all platforms (like windows), you might need to use
 	// build tags around this function or use os detection via runtime.GOOS.
-	cmd := exec.CommandContext(ctx, ping, "-c", "1", "-t", "2", host.String())
+	cmd := exec.CommandContext(ctx, requiredList[ping].path, "-c", "1", "-t", "2", host.String())
 
 	if err := cmd.Run(); err != nil {
 		return false

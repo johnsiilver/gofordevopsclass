@@ -21,7 +21,7 @@ THE SOFTWARE.
 */
 package main
 
-import "github.com/johnsiilver/gofordevopsclass/qotd/client/cobra/cmd"
+import "github.com/johnsiilver/gofordevopsclass/cli_apps/qotd/client/cobra/cmd"
 
 func main() {
 	cmd.Execute()
