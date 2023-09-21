@@ -1,4 +1,4 @@
-module github.com/PacktPublishing/Go-for-DevOps/chapter/9/tracing/demo/server
+module github.com/gc-2023/observability/tracing/server
 
 go 1.21
 

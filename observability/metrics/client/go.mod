@@ -1,4 +1,4 @@
-module github.com/PacktPublishing/Go-for-DevOps/chapter/9/logging/demo/client
+module github.com/gc-2023/observability/metrics/client
 
 go 1.21
 
