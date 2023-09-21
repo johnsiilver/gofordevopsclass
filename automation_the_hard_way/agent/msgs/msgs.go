@@ -47,22 +47,39 @@ type CPUPerfs struct {
 	ResolutionSecs int32
 	// UnixTimeNano is the unix time in nanoseconds of the first metric.
 	UnixTimeNano int64
-	CPU          []CPUPerf
+	// CPU is the list of CPU metrics. On linux this will be the per CPU metrics.
+	// On Darwin, this will be the total CPU metric, since that is all we can get
+	// without wrapping some C calls to get the per CPU metrics.
+	CPU []CPUPerf
 }
 
+// CPUPerf is the CPU performance metrics for either the entire system or all CPUs.
 type CPUPerf struct {
-	ID     string
-	User   int32
-	System int32
-	Idle   int32
-	IOWait int32
-	IRQ    int32
+	// ID is the ID of the CPU. This is not provided on Darwin.
+	ID string
+	// User is the amount of time the CPU is running user code.
+	User float64
+	// System is the amount of time the CPU is running kernel code.
+	System float64
+	// Idle is the amount of time the CPU is idle.
+	Idle float64
+	// IOWait is the amount of time the CPU is waiting for IO to complete. This is
+	// not provided on Darwin.
+	IOWait float64
+	// IRQ is the amount of time the CPU is waiting for IRQ to complete. This is
+	// not provided on Darwin.
+	IRQ float64
 }
 
 type MemPerf struct {
 	ResolutionSecs int32
 	UnixTimeNano   int64
-	Total          int32
-	Free           int32
-	Avail          int32
+	// Total is the total amount of physical memory on the machine.
+	Total uint64
+	// Free is the amount of physical memory that is free.
+	Free uint64
+	// Avail is the amount of memory that can be used without causing swapping.
+	// This is not the amount of memory that is free.
+	// This is not provided on Darwin, becuase I am not sure how to calculate it.
+	Avail uint64
 }

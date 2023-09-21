@@ -15,7 +15,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 
+	"github.com/gin-contrib/expvar"
 	"github.com/gin-gonic/gin"
 	"github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/agent/msgs"
 )
@@ -37,6 +39,11 @@ type Agent struct {
 	// addr is the address to listen on.
 	addr   string
 	router *gin.Engine
+
+	// cpuData is the atomic pointer to the CPU data.
+	cpuData atomic.Pointer[msgs.CPUPerfs]
+	// memData is the atomic pointer to the memory data.
+	memData atomic.Pointer[msgs.MemPerf]
 }
 
 // New creates a new Agent. If addr is empty, it will default to localhost:8080.
@@ -65,6 +72,11 @@ func New(router *gin.Engine, addr string) (*Agent, error) {
 		addr:     addr,
 	}
 
+	if err := agent.perfLoop(); err != nil {
+		return nil, fmt.Errorf("problem starting perf loop: %w", err)
+	}
+
+	router.GET("/debug/vars", expvar.Handler())
 	router.POST("/api/v1.0.0/install", agent.Install)
 	return agent, nil
 }

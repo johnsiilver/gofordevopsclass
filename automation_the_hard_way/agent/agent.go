@@ -11,6 +11,8 @@ import (
 var addr = flag.String("addr", "localhost:8080", "address to listen on")
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
 	agent, err := service.New(gin.Default(), *addr)
 	if err != nil {
 		log.Fatalf("unable to create agent: %s", err)
