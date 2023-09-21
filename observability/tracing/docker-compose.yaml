@@ -1,17 +1,19 @@
-version: "2"
+version: "3.8"
 services:
 
   # Jaeger
   jaeger-all-in-one:
     image: jaegertracing/all-in-one:latest
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
     ports:
       - "16686:16686"
-      - "14268"
-      - "14250"
+      - "4317"
+      - "4318"
 
   # Collector
   otel-collector:
-    image: ${OTELCOL_IMG}
+    image: otel/opentelemetry-collector:latest
     command: ["--config=/etc/otel-collector-config.yaml", "${OTELCOL_ARGS}"]
     volumes:
       - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
@@ -32,6 +34,7 @@ services:
       - DEMO_SERVER_ENDPOINT=http://demo-server:7080/hello
     depends_on:
       - demo-server
+      - otel-collector
 
   demo-server:
     build:

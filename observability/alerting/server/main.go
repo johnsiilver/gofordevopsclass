@@ -46,7 +46,7 @@ func main() {
 // artificial request latency.
 func handleRequestWithRandomSleep(meterProvider *sdkmetric.MeterProvider) http.HandlerFunc {
 	var (
-		meter        = meterProvider.Meter("demo_client", metric.WithInstrumentationVersion("v1.0.0"))
+		meter        = meterProvider.Meter("demo_server", metric.WithInstrumentationVersion("v1.0.0"))
 		instruments  = NewServerInstruments(meter)
 		commonLabels = []attribute.KeyValue{
 			attribute.String("server-attribute", "foo"),
@@ -157,7 +157,7 @@ func initMetrics(ctx context.Context, otelAgentAddr string) (*sdkmetric.MeterPro
 		resource.WithHost(),
 		resource.WithAttributes(
 			// the service name used to display traces in backends
-			semconv.ServiceNameKey.String("demo-client"),
+			semconv.ServiceNameKey.String("demo-server"),
 		),
 	)
 

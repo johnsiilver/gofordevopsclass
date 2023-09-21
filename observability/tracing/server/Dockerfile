@@ -1,4 +1,4 @@
-FROM golang:1.17
+FROM golang:1.21
 COPY . /usr/src/server/
 WORKDIR /usr/src/server/
 RUN go env -w GOPROXY=direct
