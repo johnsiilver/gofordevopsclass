@@ -26,15 +26,15 @@ import (
 
 // main sets up the trace and metrics providers and starts a loop to continuously call the server
 func main() {
-	meterProvider, shutdown := initTraceAndMetricsProvider()
+	shutdown := initTraceAndMetricsProvider()
 	defer shutdown()
 
-	continuouslySendRequests(meterProvider)
+	continuouslySendRequests()
 }
 
 // initTraceAndMetricsProvider initializes an OTLP exporter, and configures the corresponding trace and
 // metric providers.
-func initTraceAndMetricsProvider() (*sdkmetric.MeterProvider, func()) {
+func initTraceAndMetricsProvider() func() {
 	ctx := context.Background()
 
 	otelAgentAddr, ok := os.LookupEnv("OTEL_EXPORTER_OTLP_ENDPOINT")
@@ -42,10 +42,10 @@ func initTraceAndMetricsProvider() (*sdkmetric.MeterProvider, func()) {
 		otelAgentAddr = "0.0.0.0:4317"
 	}
 
-	meterProvider, closeMetrics := initMetrics(ctx, otelAgentAddr)
+	closeMetrics := initMetrics(ctx, otelAgentAddr)
 	closeTraces := initTracer(ctx, otelAgentAddr)
 
-	return meterProvider, func() {
+	return func() {
 		doneCtx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		// pushes any last exports to the receiver
@@ -94,7 +94,7 @@ func initTracer(ctx context.Context, otelAgentAddr string) func(context.Context)
 }
 
 // initMetrics initializes a metrics pusher and registers the metrics provider with the global context
-func initMetrics(ctx context.Context, otelAgentAddr string) (*sdkmetric.MeterProvider, func(context.Context)) {
+func initMetrics(ctx context.Context, otelAgentAddr string) func(context.Context) {
 	exp, err := otlpmetricgrpc.New(ctx,
 		otlpmetricgrpc.WithInsecure(),
 		otlpmetricgrpc.WithEndpoint(otelAgentAddr),
@@ -121,7 +121,7 @@ func initMetrics(ctx context.Context, otelAgentAddr string) (*sdkmetric.MeterPro
 	)
 	otel.SetMeterProvider(meterProvider)
 
-	return meterProvider, func(doneCtx context.Context) {
+	return func(doneCtx context.Context) {
 		// pushes any last exports to the receiver
 		if err := meterProvider.Shutdown(ctx); err != nil {
 			handleErr(err, "Failed to shutdown the collector metric exporter")
@@ -137,10 +137,10 @@ func handleErr(err error, message string) {
 }
 
 // continuouslySendRequests continuously sends requests to the server and generates random lines of text to be measured
-func continuouslySendRequests(meterProvider *sdkmetric.MeterProvider) {
+func continuouslySendRequests() {
 	var (
 		tracer       = otel.Tracer("demo-client-tracer")
-		meter        = meterProvider.Meter("demo_client", metric.WithInstrumentationVersion("v1.0.0"))
+		meter        = otel.GetMeterProvider().Meter("demo_client", metric.WithInstrumentationVersion("v1.0.0"))
 		instruments  = NewClientInstruments(meter)
 		commonLabels = []attribute.KeyValue{
 			attribute.String("method", "repl"),

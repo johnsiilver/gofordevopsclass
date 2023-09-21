@@ -4,10 +4,12 @@ services:
   # Jaeger
   jaeger-all-in-one:
     image: jaegertracing/all-in-one:latest
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
     ports:
       - "16686:16686"
-      - "14268"
-      - "14250"
+      - "4317"
+      - "4318"
 
   # Collector
   otel-collector:

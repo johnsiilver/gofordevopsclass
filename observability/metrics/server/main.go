@@ -29,11 +29,11 @@ var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 // main initializes metrics and tracing providers and listens to requests at /hello returning "Hello World!" with
 // randomized latency.
 func main() {
-	meterProvider, shutdown := initProvider()
+	shutdown := initProvider()
 	defer shutdown()
 
 	// create a handler wrapped in OpenTelemetry instrumentation
-	handler := handleRequestWithRandomSleep(meterProvider)
+	handler := handleRequestWithRandomSleep()
 	wrappedHandler := otelhttp.NewHandler(handler, "/hello")
 
 	// serve up the wrapped handler
@@ -44,9 +44,9 @@ func main() {
 
 // handleRequestWithRandomSleep registers a request handler that will record request counts and randomly sleep to induce
 // artificial request latency.
-func handleRequestWithRandomSleep(meterProvider *sdkmetric.MeterProvider) http.HandlerFunc {
+func handleRequestWithRandomSleep() http.HandlerFunc {
 	var (
-		meter        = meterProvider.Meter("demo_client", metric.WithInstrumentationVersion("v1.0.0"))
+		meter        = otel.GetMeterProvider().Meter("demo_client", metric.WithInstrumentationVersion("v1.0.0"))
 		instruments  = NewServerInstruments(meter)
 		commonLabels = []attribute.KeyValue{
 			attribute.String("server-attribute", "foo"),
@@ -80,7 +80,7 @@ func handleRequestWithRandomSleep(meterProvider *sdkmetric.MeterProvider) http.H
 
 // initTraceAndMetricsProvider initializes an OTLP exporter, and configures the corresponding trace and
 // metric providers.
-func initProvider() (*sdkmetric.MeterProvider, func()) {
+func initProvider() func() {
 	ctx := context.Background()
 
 	otelAgentAddr, ok := os.LookupEnv("OTEL_EXPORTER_OTLP_ENDPOINT")
@@ -88,10 +88,10 @@ func initProvider() (*sdkmetric.MeterProvider, func()) {
 		otelAgentAddr = "0.0.0.0:4317"
 	}
 
-	metricsProvider, closeMetrics := initMetrics(ctx, otelAgentAddr)
+	closeMetrics := initMetrics(ctx, otelAgentAddr)
 	closeTraces := initTracer(ctx, otelAgentAddr)
 
-	return metricsProvider, func() {
+	return func() {
 		doneCtx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		// pushes any last exports to the receiver
@@ -140,7 +140,7 @@ func initTracer(ctx context.Context, otelAgentAddr string) func(context.Context)
 }
 
 // initMetrics initializes a metrics pusher and returns the metrics provider
-func initMetrics(ctx context.Context, otelAgentAddr string) (*sdkmetric.MeterProvider, func(context.Context)) {
+func initMetrics(ctx context.Context, otelAgentAddr string) func(context.Context) {
 	exp, err := otlpmetricgrpc.New(ctx,
 		otlpmetricgrpc.WithInsecure(),
 		otlpmetricgrpc.WithEndpoint(otelAgentAddr),
@@ -157,7 +157,7 @@ func initMetrics(ctx context.Context, otelAgentAddr string) (*sdkmetric.MeterPro
 		resource.WithHost(),
 		resource.WithAttributes(
 			// the service name used to display traces in backends
-			semconv.ServiceNameKey.String("demo-client"),
+			semconv.ServiceNameKey.String("demo-server"),
 		),
 	)
 
@@ -167,7 +167,7 @@ func initMetrics(ctx context.Context, otelAgentAddr string) (*sdkmetric.MeterPro
 	)
 	otel.SetMeterProvider(meterProvider)
 
-	return meterProvider, func(doneCtx context.Context) {
+	return func(doneCtx context.Context) {
 		// pushes any last exports to the receiver
 		if err := meterProvider.Shutdown(ctx); err != nil {
 			handleErr(err, "Failed to shutdown the collector metric exporter")
