@@ -1,0 +1,19 @@
+{
+    "Concurrency": 2,
+    "CanaryNum": 1,
+    "MaxFailures": 2,
+    "Src": "/Users/jdoak/trees/gofordevopsclass/automation_the_hard_way/orchestration/lb/sample/replace/web",
+    "LB": "127.0.0.1:9091",
+    "Pattern": "/",
+    "Backends": [
+            "127.0.0.1:9092",
+            "127.0.0.1:9093",
+            "127.0.0.1:9094",
+            "127.0.0.1:9095",
+            "127.0.0.1:9096",
+            "127.0.0.1:9097",
+            "127.0.0.1:9098",
+            "127.0.0.1:9099"
+    ]
+}
+

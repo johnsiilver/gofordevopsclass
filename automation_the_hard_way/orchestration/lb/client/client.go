@@ -3,12 +3,14 @@ package client
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
-	pb "github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/workflow/lb/proto"
+	pb "github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/orchestration/lb/proto"
 )
 
 // HealthChecks are a set of backend health checks that a backend must pass
@@ -69,10 +71,13 @@ type Client struct {
 
 // New is the constructor for Client. addr is the server's [host]:[port].
 func New(addr string) (*Client, error) {
-	conn, err := grpc.Dial(addr, grpc.WithInsecure())
+	creds := grpc.WithTransportCredentials(insecure.NewCredentials())
+
+	conn, err := grpc.Dial(addr, creds, grpc.WithBlock())
 	if err != nil {
 		return nil, err
 	}
+	log.Println(conn.GetState())
 
 	return &Client{
 		client: pb.NewLoadBalancerClient(conn),

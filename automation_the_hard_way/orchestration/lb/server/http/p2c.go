@@ -18,7 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	pb "github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/workflow/lb/proto"
+	pb "github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/orchestration/lb/proto"
 )
 
 // weightedBackend implements Backend with a wrapper around another Backend. This

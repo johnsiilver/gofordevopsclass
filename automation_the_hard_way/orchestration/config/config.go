@@ -5,8 +5,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-
-	"golang.org/x/crypto/ssh"
 )
 
 // Config represents the configuration file that details the work to be done.
@@ -21,23 +19,12 @@ type Config struct {
 	MaxFailures int32
 	// Src is the path on disk to the binary to push.
 	Src string
-	// Dst is the path on the remote disk to copy the binary to.
-	Dst string
 	// LB is the host:port of the load balancer.
 	LB string
 	// Pattern is the load balancer's Pool pattern.
 	Pattern string
-	// Backends are the backends that need to be updated, simply the host in IP form.
+	// Backends are the backends that need to be updated, simply the host in IP:Port form.
 	Backends []string
-	// BackendUser is the user to use when logging in to the backends.
-	BackendUser string
-	// BinaryPort is the port the binary will start on. This is used to configure the
-	// load balancer.
-	BinaryPort int
-
-	// SSH is the SSH client configuration for all host connections. This is not set
-	// in the config file, it is added in during main().
-	SSH *ssh.ClientConfig
 }
 
 // Validate does basic validation of the config.
@@ -49,13 +36,10 @@ func (s Config) Validate() error {
 		return fmt.Errorf("must specify some Backends")
 	}
 	for _, b := range s.Backends {
-		_, err := CheckIP(b)
+		_, _, err := CheckIPPort(b)
 		if err != nil {
 			return fmt.Errorf("Backend(%s) is not correct: %w", b, err)
 		}
-	}
-	if s.BinaryPort < 1 {
-		return fmt.Errorf("BinaryPort(%d) is invalid", s.BinaryPort)
 	}
 	if strings.TrimSpace(s.Pattern) == "" {
 		return fmt.Errorf("Pattern(%s) is invalid", s.Pattern)
@@ -64,15 +48,6 @@ func (s Config) Validate() error {
 		return fmt.Errorf("Concurrency(%d) is invalid", s.Concurrency)
 	}
 	return nil
-}
-
-// CheckIP takes a string and verifies it is a valid IP.
-func CheckIP(s string) (net.IP, error) {
-	ip := net.ParseIP(s)
-	if ip == nil {
-		return nil, fmt.Errorf("%q is not a valid IP", s)
-	}
-	return ip, nil
 }
 
 // CheckIPPort takes a host:port string and splits it out and verifies it.

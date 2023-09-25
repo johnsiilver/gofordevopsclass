@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/workflow/lb/server/http"
+	"github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/orchestration/lb/server/http"
 
 	"google.golang.org/grpc"
 
-	pb "github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/workflow/lb/proto"
+	pb "github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/orchestration/lb/proto"
 )
 
 // Server is a gRPC server for interacting with the load balancer.
@@ -204,6 +204,7 @@ func (s *Server) RemoveBackend(ctx context.Context, req *pb.RemoveBackendReq) (*
 
 // PoolHealth returns the health of a pool defined in req.
 func (s *Server) PoolHealth(ctx context.Context, req *pb.PoolHealthReq) (*pb.PoolHealthResp, error) {
+	log.Println("pool health called")
 	ph, err := s.lb.PoolHealth(ctx, req)
 	if err != nil {
 		return nil, err

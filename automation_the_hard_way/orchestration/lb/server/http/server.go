@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	pb "github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/workflow/lb/proto"
+	pb "github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/orchestration/lb/proto"
 )
 
 type routeHandler struct {

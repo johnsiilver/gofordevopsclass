@@ -7,12 +7,12 @@ import (
 	"net"
 	"time"
 
-	"github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/workflow/lb/client"
+	"github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/orchestration/lb/client"
 
 	"github.com/fatih/color"
 	"github.com/rodaine/table"
 
-	pb "github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/workflow/lb/proto"
+	pb "github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/orchestration/lb/proto"
 )
 
 var (

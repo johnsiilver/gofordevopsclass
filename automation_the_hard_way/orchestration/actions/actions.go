@@ -5,11 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -17,10 +18,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/workflow/config"
-	"github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/workflow/lb/client"
-	"github.com/pkg/sftp"
-	"golang.org/x/crypto/ssh"
+	"github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/orchestration/config"
+	"github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/orchestration/lb/client"
 )
 
 // StateFn is a function that represents a state in the workflow.
@@ -41,8 +40,6 @@ type Actions struct {
 	dst string
 	// lb is the load balancer client.
 	lb *client.Client
-	// sshClient is the SSH client to the remote machine.
-	sshClient *ssh.Client
 
 	// started indicates if the workflow has started.
 	started bool
@@ -54,13 +51,14 @@ type Actions struct {
 
 // New creates a new Actions.
 func New(endpoint string, cfg *config.Config, lb *client.Client) (*Actions, error) {
-	ip, err := config.CheckIP(endpoint)
+	ip, port, err := config.CheckIPPort(endpoint)
 	if err != nil {
 		return nil, err
 	}
+
 	return &Actions{
 		endpoint: endpoint,
-		backend:  client.IPBackend{IP: ip, Port: int32(cfg.BinaryPort)},
+		backend:  client.IPBackend{IP: ip, Port: port},
 		config:   cfg,
 		lb:       lb,
 	}, nil
@@ -76,6 +74,7 @@ func (a *Actions) Err() error {
 	return a.err
 }
 
+// Run runs the workflow.
 func (a *Actions) Run(ctx context.Context) (err error) {
 	a.srcf, err = os.Open(a.config.Src)
 	if err != nil {
@@ -83,15 +82,7 @@ func (a *Actions) Run(ctx context.Context) (err error) {
 		return a.err
 	}
 
-	back := a.endpoint + ":22"
-	a.sshClient, err = ssh.Dial("tcp", back, a.config.SSH)
-	if err != nil {
-		a.err = fmt.Errorf("problem dialing the endpoint(%s): %w", back, err)
-		return a.err
-	}
-	defer a.sshClient.Close()
-
-	fn := a.rmBackend
+	fn := a.findAppLocal
 	if a.failedState != nil {
 		fn = a.failedState
 	}
@@ -114,6 +105,49 @@ func (a *Actions) Run(ctx context.Context) (err error) {
 	}
 }
 
+// findAppLocal finds the app on the local machine by querying the /installedAt URL.
+// In real life, you would do this in a more robust way, but this is just a demo.
+// The orignal version of this has a hardcoded path to the binary and we did this with SFTP.
+// However, to avoid all the SSH setup and do this all on your local machine, we are using
+// a little bandaid here.
+func (a *Actions) findAppLocal(ctx context.Context) (StateFn, error) {
+	c := &http.Client{}
+
+	u := &url.URL{
+		Host:   a.endpoint,
+		Path:   "/installedAt",
+		Scheme: "http",
+	}
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		"GET",
+		u.String(),
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("problem creating HTTP request: %w", err)
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		time.Sleep(1 * time.Second)
+		return nil, errors.New("findAppLocal() timed out")
+	}
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("problem reading response body: %w", err)
+	}
+	if len(b) == 0 {
+		return nil, errors.New("findAppLocal() returned nothing")
+	}
+
+	a.dst = strings.TrimSpace(string(b))
+	a.dst = filepath.Clean(a.dst)
+	return a.rmBackend, nil
+}
+
+// rmBackend removes the backend from the load balancer.
 func (a *Actions) rmBackend(ctx context.Context) (StateFn, error) {
 	err := a.lb.RemoveBackend(ctx, a.config.Pattern, a.backend)
 	if err != nil {
@@ -123,25 +157,31 @@ func (a *Actions) rmBackend(ctx context.Context) (StateFn, error) {
 	return a.jobKill, nil
 }
 
+const (
+	SIGTERM = 15
+	SIGKILL = 9
+)
+
+// jobKill kills the existing job on the remote machine.
 func (a *Actions) jobKill(ctx context.Context) (StateFn, error) {
-	pids, err := a.findPIDs(ctx)
+	pid, err := a.findPID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("problem finding existing PIDs: %w", err)
 	}
 
-	if len(pids) == 0 {
-		return a.cp, nil
+	if pid == "" {
+		return nil, fmt.Errorf("could not locate a job for backend: %s", a.endpoint)
 	}
 
-	if err := a.killPIDs(ctx, pids, 15); err != nil {
+	if err := a.killPID(ctx, pid, SIGTERM); err != nil {
 		return nil, fmt.Errorf("failed to kill existing PIDs: %w", err)
 	}
 
-	if err := a.waitForDeath(ctx, pids, 30*time.Second); err != nil {
-		if err := a.killPIDs(ctx, pids, 9); err != nil {
+	if err := a.waitForDeath(ctx, pid, 30*time.Second); err != nil {
+		if err := a.killPID(ctx, pid, SIGKILL); err != nil {
 			return nil, fmt.Errorf("failed to kill existing PIDs: %w", err)
 		}
-		if err := a.waitForDeath(ctx, pids, 10*time.Second); err != nil {
+		if err := a.waitForDeath(ctx, pid, 10*time.Second); err != nil {
 			return nil, fmt.Errorf("failed to kill existing PIDs after -9: %w", err)
 		}
 		return a.cp, nil
@@ -149,13 +189,23 @@ func (a *Actions) jobKill(ctx context.Context) (StateFn, error) {
 	return a.cp, nil
 }
 
+// cp copies the binary to the remote machine.
 func (a *Actions) cp(ctx context.Context) (StateFn, error) {
-	if err := a.sftp(); err != nil {
-		return nil, fmt.Errorf("failed to cp binary to remote end: %w", err)
+	dstf, err := os.OpenFile(a.dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0770)
+	if err != nil {
+		return nil, fmt.Errorf("could not open new file on remote destination(%s): %w", a.dst, err)
 	}
+	defer dstf.Close()
+
+	_, err = io.Copy(dstf, a.srcf)
+	if err != nil {
+		return nil, fmt.Errorf("SFTP failed to do a complete copy: %w", err)
+	}
+
 	return a.jobStart, nil
 }
 
+// jobStart starts the binary on the remote machine.
 func (a *Actions) jobStart(ctx context.Context) (StateFn, error) {
 	if err := a.runBinary(ctx); err != nil {
 		return nil, fmt.Errorf("failed to start binary after copy: %w", err)
@@ -163,6 +213,7 @@ func (a *Actions) jobStart(ctx context.Context) (StateFn, error) {
 	return a.reachable(ctx)
 }
 
+// reachable waits for the binary to be reachable on /healthz.
 func (a *Actions) reachable(ctx context.Context) (StateFn, error) {
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
@@ -170,7 +221,7 @@ func (a *Actions) reachable(ctx context.Context) (StateFn, error) {
 	c := &http.Client{}
 
 	u := &url.URL{
-		Host:   net.JoinHostPort(a.endpoint, strconv.Itoa(a.config.BinaryPort)),
+		Host:   a.endpoint,
 		Path:   "/healthz",
 		Scheme: "http",
 	}
@@ -206,6 +257,7 @@ func (a *Actions) reachable(ctx context.Context) (StateFn, error) {
 	}
 }
 
+// addBackend adds the backend to the load balancer.
 func (a *Actions) addBackend(ctx context.Context) (StateFn, error) {
 	err := a.lb.AddBackend(ctx, a.config.Pattern, a.backend)
 	if err != nil {
@@ -215,39 +267,40 @@ func (a *Actions) addBackend(ctx context.Context) (StateFn, error) {
 	return nil, nil
 }
 
-func (a *Actions) findPIDs(ctx context.Context) ([]string, error) {
-	serviceName := path.Base(a.config.Src)
-
-	result, err := a.combinedOutput(
-		ctx,
-		a.sshClient,
-		fmt.Sprintf("pidof %s", serviceName),
-	)
+// findPID finds the PIDs of the running binary.
+func (a *Actions) findPID(ctx context.Context) (string, error) {
+	serviceName := path.Base(a.dst)
+	cmdStr := fmt.Sprintf(`ps -A | grep %s | grep -v grep | awk '{print $1}'`, serviceName)
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", cmdStr)
+	result, err := cmd.CombinedOutput()
 	if err != nil {
-		if err.(*ssh.ExitError).ExitStatus() == 127 {
-			return nil, err
-		}
-		return nil, nil
+		return "", err
 	}
 
-	return strings.Split(strings.TrimSpace(result), " "), nil
+	pid := strings.TrimSpace(string(result))
+	if strings.Contains(pid, "\n") {
+		return "", fmt.Errorf("found more than one pid with name %q", a.dst)
+	}
+	return pid, nil
 }
 
-func (a *Actions) killPIDs(ctx context.Context, pids []string, signal syscall.Signal) error {
-	for _, pid := range pids {
-		_, err := a.combinedOutput(
-			ctx,
-			a.sshClient,
-			fmt.Sprintf("kill -s %d %s", signal, pid),
-		)
-		if err != nil {
-			return err
-		}
+// killPID sends the PIDs the given signal.
+func (a *Actions) killPID(ctx context.Context, pid string, signal syscall.Signal) error {
+	switch signal {
+	case SIGTERM, SIGKILL:
+		// Do nothing
+	default:
+		return fmt.Errorf("sent killPID a non-termination signal: %d", signal)
+	}
+	cmd := exec.CommandContext(ctx, "kill", "-"+strconv.Itoa(int(signal)), pid)
+	if _, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("problem kiling pid %s: %w", pid, err)
 	}
 	return nil
 }
 
-func (a *Actions) waitForDeath(ctx context.Context, pids []string, timeout time.Duration) error {
+// waitForDeath waits for the pid to die or times out.
+func (a *Actions) waitForDeath(ctx context.Context, pid string, timeout time.Duration) error {
 	t := time.NewTimer(timeout)
 	defer t.Stop()
 	for {
@@ -257,94 +310,30 @@ func (a *Actions) waitForDeath(ctx context.Context, pids []string, timeout time.
 		default:
 		}
 
-		results, err := a.findPIDs(ctx)
+		pid, err := a.findPID(ctx)
 		if err != nil {
 			return fmt.Errorf("findPIDs giving errors: %w", err)
 		}
-
-		if len(results) == 0 {
+		if pid == "" {
 			return nil
 		}
+
 		time.Sleep(1 * time.Second)
 	}
 }
 
+// runBinary runs the binary on the remote machine.
 func (a *Actions) runBinary(ctx context.Context) error {
-	err := a.startOnly(
-		ctx,
-		a.sshClient,
-		fmt.Sprintf("/usr/bin/nohup %s &", a.config.Dst),
-	)
-	if err != nil {
-		return fmt.Errorf("problem running the binary on the remove side: %w", err)
+	cmdStr := fmt.Sprintf("nohup %s -port %d &", a.dst, a.backend.Port)
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", cmdStr)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("problem running the binary on the remote side: %w", err)
 	}
+
 	return nil
 }
 
-func (a *Actions) sftp() error {
-	c, err := sftp.NewClient(a.sshClient)
-	if err != nil {
-		return fmt.Errorf("could not create SFTP client: %w", err)
-	}
-	defer c.Close()
-
-	dstf, err := c.OpenFile(a.config.Dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
-	if err != nil {
-		return fmt.Errorf("SFTP could not open file on remote destination(%s): %w", a.config.Dst, err)
-	}
-	defer dstf.Close()
-	if err := dstf.Chmod(0770); err != nil {
-		return fmt.Errorf("SFTP could not set the file mode to 0770: %w", err)
-	}
-
-	_, err = io.Copy(dstf, a.srcf)
-	if err != nil {
-		return fmt.Errorf("SFTP failed to do a complete copy: %w", err)
-	}
-	return nil
-}
-
-// combinedOutput runs a command on an SSH client. The context can be cancelled, however
-// SSH does not always honor the kill signals we send, so this might not break. So closing
-// the session does nothing. So depending on what the server is doing, cancelling the context
-// may do nothing and it may still block.
-func (*Actions) combinedOutput(ctx context.Context, conn *ssh.Client, cmd string) (string, error) {
-	sess, err := conn.NewSession()
-	if err != nil {
-		return "", err
-	}
-	defer sess.Close()
-
-	if v, ok := ctx.Deadline(); ok {
-		t := time.NewTimer(v.Sub(time.Now()))
-		defer t.Stop()
-
-		go func() {
-			x := <-t.C
-			if !x.IsZero() {
-				sess.Signal(ssh.SIGKILL)
-			}
-		}()
-	}
-
-	b, err := sess.Output(cmd)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
-
-func (*Actions) startOnly(ctx context.Context, conn *ssh.Client, cmd string) error {
-	sess, err := conn.NewSession()
-	if err != nil {
-		return fmt.Errorf("could not start new SSH session: %w", err)
-	}
-	// Note: don't close the session, it will prevent the program from starting.
-
-	return sess.Start(cmd)
-}
-
-func (a *Actions) failure() string {
+func (a *Actions) Failure() string {
 	if a.failedState == nil {
 		return ""
 	}

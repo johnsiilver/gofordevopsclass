@@ -1,19 +1,22 @@
-package main
+package workflow
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"net"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/workflow/actions"
-	"github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/workflow/config"
-	"github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/workflow/lb/client"
+	"github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/orchestration/actions"
+	"github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/orchestration/config"
+	"github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/orchestration/lb/client"
 
-	pb "github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/workflow/lb/proto"
+	pb "github.com/johnsiilver/gofordevopsclass/automation_the_hard_way/orchestration/lb/proto"
 )
 
 // EndStates are the final states after a run of a workflow.
@@ -121,23 +124,23 @@ func (w *Workflow) Run(ctx context.Context) error {
 	return nil
 }
 
-// retryFailed retries all failed actiona. This is only used if
-func (w *Workflow) retryFailed(ctx context.Context) {
+// RetryFailed retries all failed actiona. This is only used if
+func (w *Workflow) RetryFailed(ctx context.Context) {
 	if w.endState != ESSuccess {
 		panic("retrlyFailed cannot be called unless the workflow was a success")
 	}
 
-	ws := w.status()
+	ws := w.Status()
 
 	wg := sync.WaitGroup{}
 
-	for i := 0; i < len(ws.failures); i++ {
+	for i := 0; i < len(ws.Failures); i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 
-			err := ws.failures[i].Run(ctx)
+			err := ws.Failures[i].Run(ctx)
 			cancel()
 			if err == nil {
 				atomic.AddInt32(&w.failures, -1)
@@ -166,6 +169,8 @@ func (w *Workflow) checkLBState(ctx context.Context) error {
 	// we should have the backends that the config tells us are there.
 	case pb.PoolStatus_PS_FULL:
 		if len(w.config.Backends) != len(ph.Backends) {
+			log.Println(w.config.Backends)
+			log.Println(ph.Backends)
 			return fmt.Errorf("expected backends(%d) != found backends(%d)", len(w.config.Backends), len(ph.Backends))
 		}
 		m := map[string]bool{}
@@ -176,7 +181,7 @@ func (w *Workflow) checkLBState(ctx context.Context) error {
 			switch {
 			case hb.Backend.GetIpBackend() != nil:
 				b := hb.Backend.GetIpBackend()
-				if !m[b.Ip] {
+				if !m[backendToString(b)] {
 					return fmt.Errorf("configured backend %q not in config file", b.Ip)
 				}
 			default:
@@ -187,6 +192,10 @@ func (w *Workflow) checkLBState(ctx context.Context) error {
 		return fmt.Errorf("pool was not at full health, was %s", ph.Status)
 	}
 	return nil
+}
+
+func backendToString(back *pb.IPBackend) string {
+	return net.JoinHostPort(back.Ip, strconv.Itoa(int(back.Port)))
 }
 
 // buildActions builds actions from our configuration file.
@@ -201,19 +210,20 @@ func (w *Workflow) buildActions() error {
 	return nil
 }
 
-type workflowStatus struct {
-	// failures is a list of failed actiona.
-	failures []*actions.Actions
-	// endState is the endState of the workflow.
-	endState EndState
+// Status is the status of a workflow after it has run.
+type Status struct {
+	// Failures is a list of failed actiona.
+	Failures []*actions.Actions
+	// EndState is the EndState of the workflow.
+	EndState EndState
 }
 
-// status will return the workflow's status after run() has completed
-func (w *Workflow) status() workflowStatus {
-	ws := workflowStatus{endState: w.endState}
+// Status will return the workflow's status after run() has completed
+func (w *Workflow) Status() Status {
+	ws := Status{EndState: w.endState}
 	for _, a := range w.actions {
 		if a.Err() != nil {
-			ws.failures = append(ws.failures, a)
+			ws.Failures = append(ws.Failures, a)
 		}
 	}
 	return ws
