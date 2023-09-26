@@ -187,6 +187,9 @@ func (a *Agent) writeFile(z *zip.File, dir string) error {
 // from the temp location to the final location.
 func (a *Agent) migrate(req *msgs.InstallReq, from string) error {
 	to := filepath.Join(a.homePath, pkgDir, req.Name)
+	if err := os.MkdirAll(filepath.Dir(to), 0770); err != nil {
+		return err
+	}
 	// We can only have one program running at a time.
 	// Note: I did not implement something to stop any existing programs that are running.
 	// This is trivial to implement.
