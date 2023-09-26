@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	addr = flag.String("addr", "localhost:8080", "address to listen on")
+	addr     = flag.String("addr", "localhost:8080", "address to listen on")
 	qotdPort = flag.Int("qotdPort", 17, "the port to run the qotd service on")
 )
 
@@ -21,7 +21,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("unable to create agent: %s", err)
 	}
-	agent.QOTDPort = 17
+	agent.QOTDAddr = 17
 	if err := agent.Start(); err != nil {
 		log.Fatalf("unable to start agent: %s", err)
 	}

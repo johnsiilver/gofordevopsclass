@@ -45,7 +45,7 @@ type Agent struct {
 	// memData is the atomic pointer to the memory data.
 	memData atomic.Pointer[msgs.MemPerf]
 
-	QOTDPort int
+	QOTDAddr string
 }
 
 // New creates a new Agent. If addr is empty, it will default to localhost:8080.
@@ -212,16 +212,16 @@ func (a *Agent) migrate(req *msgs.InstallReq, from string) error {
 //	your programs. This is for illustration purposes only. You would also want something
 //	to restart the program if it dies by monitoring the process.
 func (a *Agent) startProgram(ctx context.Context, req *msgs.InstallReq) error {
-	if a.QOTDPort == 0 {
-		a.QOTDPort = 17
+	if a.QOTDAddr == "" {
+		a.QOTDAddr = ":17"
 	}
 
 	p := filepath.Join(a.homePath, pkgDir)
 	cmdStr := fmt.Sprintf(
-		"%s %s --port %d &",
+		"%s %s --addr %s &",
 		filepath.Join(p, req.Name, req.Binary),
 		strings.Join(req.Args, " "),
-		a.QOTDPort,
+		a.QOTDAddr,
 	)
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", cmdStr)
 

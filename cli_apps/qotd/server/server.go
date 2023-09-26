@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	port = flag.String("port", ":17", "port to listen on")
+	addr = flag.String("addr", ":17", "port to listen on")
 )
 
 var authorToQuotes = map[string][]string{
@@ -42,14 +42,14 @@ var authorToQuotes = map[string][]string{
 func main() {
 	flag.Parse()
 
-	log.Println("Starting QOTD server on port", *port)
+	log.Println("Starting QOTD server on addr", *addr)
 
-	addr, err := net.ResolveTCPAddr("tcp4", *port)
+	addresss, err := net.ResolveTCPAddr("tcp4", *addr)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	listen, err := net.ListenTCP("tcp", addr)
+	listen, err := net.ListenTCP("tcp", addresss)
 	if err != nil {
 		log.Fatal(err)
 	}
