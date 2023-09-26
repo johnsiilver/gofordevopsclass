@@ -3,58 +3,62 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"time"
 
-	"github.com/sony/gobreaker"
+	"github.com/cenk/backoff"
 )
 
-// HTTP is a wrapper around http.Client that implements the CircuitBreaker pattern for HTTP requests.
+// HTTP is a wrapper around http.Client that implements an Exponential backoof pattern for
+// HTTP requests.
 type HTTP struct {
 	client *http.Client
-	cb     *gobreaker.CircuitBreaker
 }
 
 // New creates an new HTTP instance.
 func New(client *http.Client) *HTTP {
 	return &HTTP{
 		client: client,
-		cb: gobreaker.NewCircuitBreaker(
-			gobreaker.Settings{
-				MaxRequests: 1,                // only one request at a time if in the half-open state
-				Interval:    30 * time.Second, // how long before we can leave the Half-Open state
-				Timeout:     10 * time.Second, // how long to wait in Open before transiting to Half-Open
-				ReadyToTrip: func(c gobreaker.Counts) bool {
-					return c.ConsecutiveFailures > 5 // after 5 failures, trip the circuit
-				},
-			},
-		),
 	}
 }
 
-// Do executes an HTTP request.
+// Do executes an HTTP request with an exponential backoff.
 func (h *HTTP) Do(req *http.Request) (*http.Response, error) {
 	if _, ok := req.Context().Deadline(); !ok {
 		return nil, fmt.Errorf("all requests must have a Context deadline set")
 	}
+	var resp *http.Response
 
-	r, err := h.cb.Execute(
-		func() (any, error) {
-			resp, err := h.client.Do(req)
-			if err != nil {
-				return nil, err
-			}
-			if resp.StatusCode != 200 {
-				return nil, fmt.Errorf("non-200 response code")
-			}
-			return resp, err
+	op := func() error {
+		var err error
+		resp, err = h.client.Do(req)
+		if err != nil {
+			log.Println("error: unable to fetch URL: ", err)
+			return err
+		}
+		if resp.StatusCode != 200 {
+			return fmt.Errorf("non-200 response code")
+		}
+		return nil
+	}
+
+	err := backoff.Retry(
+		op,
+		&backoff.ExponentialBackOff{
+			InitialInterval:     2 * time.Second,
+			RandomizationFactor: 0.5,
+			Multiplier:          2,
+			MaxInterval:         10 * time.Second,
+			Clock:               backoff.SystemClock,
 		},
 	)
 	if err != nil {
 		return nil, err
 	}
-	return r.(*http.Response), nil
+
+	return resp, nil
 }
 
 func main() {
@@ -82,10 +86,10 @@ func main() {
 		if err != nil {
 			cancel()
 			fmt.Println("error: unable to fetch URL: ", err)
-			time.Sleep(500 * time.Millisecond)
 			continue
 		}
 		resp.Body.Close()
+
 		cancel()
 		fmt.Println("success")
 		time.Sleep(500 * time.Millisecond)
