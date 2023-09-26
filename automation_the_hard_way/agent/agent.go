@@ -21,7 +21,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("unable to create agent: %s", err)
 	}
-	agent.QOTDAddr = 17
+	agent.QOTDAddr = ":17"
 	if err := agent.Start(); err != nil {
 		log.Fatalf("unable to start agent: %s", err)
 	}
