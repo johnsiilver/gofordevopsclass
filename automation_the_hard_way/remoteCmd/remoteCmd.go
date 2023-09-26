@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/user"
@@ -39,6 +40,7 @@ func main() {
 	var auth ssh.AuthMethod
 
 	if *private == "" {
+		log.Println("get password from terminal")
 		fi, _ := os.Stdin.Stat()
 		if (fi.Mode() & os.ModeCharDevice) == 0 {
 			fmt.Println("-private not set, cannot use password when STDIN is a pipe")

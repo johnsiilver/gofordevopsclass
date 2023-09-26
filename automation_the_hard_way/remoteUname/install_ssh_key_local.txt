@@ -1,0 +1,8 @@
+ssh-keygen -t rsa
+
+// When asked where to put it:
+/Users/[user]/.ssh/local_id_rsa
+or 
+/home/[user]/.ssh/local_id_rsa
+
+ssh-copy-id -i ~/.ssh/local_id_rsa.pub 127.0.0.1
