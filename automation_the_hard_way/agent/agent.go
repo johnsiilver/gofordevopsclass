@@ -10,7 +10,7 @@ import (
 
 var (
 	addr     = flag.String("addr", "localhost:8080", "address to listen on")
-	qotdPort = flag.Int("qotdPort", 17, "the port to run the qotd service on")
+	qotdAddr = flag.Int("qotdAddr", 17, "the port to run the qotd service on")
 )
 
 func main() {
