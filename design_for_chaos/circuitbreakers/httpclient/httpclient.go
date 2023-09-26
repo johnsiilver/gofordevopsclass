@@ -34,13 +34,14 @@ func New(client *http.Client) *HTTP {
 }
 
 // Do executes an HTTP request.
-func (h *HTTP) Do(req *http.Request) (*http.Response, error) {
-	if _, ok := req.Context().Deadline(); !ok {
-		return nil, fmt.Errorf("all requests must have a Context deadline set")
-	}
-
+func (h *HTTP) Do(req *http.Request, reqTimeout time.Duration) (*http.Response, error) {
 	r, err := h.cb.Execute(
 		func() (any, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), reqTimeout)
+			defer cancel()
+
+			req := req.WithContext(ctx)
+
 			resp, err := h.client.Do(req)
 			if err != nil {
 				return nil, err
@@ -75,18 +76,14 @@ func main() {
 			fmt.Println("error: unable to create request: ", err)
 			os.Exit(1)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		req = req.WithContext(ctx)
 
-		resp, err := h.Do(req)
+		resp, err := h.Do(req, 1*time.Second)
 		if err != nil {
-			cancel()
 			fmt.Println("error: unable to fetch URL: ", err)
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
 		resp.Body.Close()
-		cancel()
 		fmt.Println("success")
 		time.Sleep(500 * time.Millisecond)
 	}
